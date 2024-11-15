@@ -1,0 +1,44 @@
+blueprint:
+  name: Turn off lights after inactivity
+  description: Automatically turn off lights when no motion or occupancy is detected for a specified time.
+  domain: automation
+  input:
+    occupancy_sensor:
+      name: Presence sensor
+      description: The motion or occupancy sensor to monitor.
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class:
+            - motion
+            - occupancy
+    delay_time:
+      name: Delay before turning off
+      description: Time to wait after no presence is detected before turning off the lights.
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: minutes
+          mode: slider
+    target_lights:
+      name: Target lights
+      description: The lights or groups of lights to turn off.
+      selector:
+        target:
+          entity:
+            domain: light
+
+mode: restart
+
+trigger:
+  - platform: state
+    entity_id: !input occupancy_sensor
+    to: 'off'
+    for:
+      minutes: !input delay_time
+
+action:
+  - service: light.turn_off
+    target: !input target_lights

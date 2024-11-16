@@ -2,6 +2,7 @@ blueprint:
   name: Turn off lights after inactivity
   description: Automatically turn off lights when no motion or occupancy is detected for a specified time.
   domain: automation
+  author: eric.daras@me.com
   input:
     occupancy_sensor:
       name: Presence sensor

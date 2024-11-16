@@ -1,0 +1,156 @@
+blueprint:
+  name: Presence-Activated Light with Quick Pass Mode
+  description: >
+    Turns on a light when presence is detected. If the presence duration is less than a specified time (quick pass), the light turns off immediately after presence ends, unless the light was already on at the time of triggering.
+
+  domain: automation
+  input:
+    presence_sensor:
+      name: Presence Sensor
+      description: Presence sensor to monitor
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: occupancy
+    light_entity:
+      name: Light
+      description: Light entity to control
+      selector:
+        entity:
+          domain: light
+    brightness_level:
+      name: Brightness Percentage
+      description: Brightness level for the light when it turns on
+      default: 100
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: '%'
+    no_motion_wait:
+      name: Wait Time After No Motion
+      description: Time in seconds to wait before turning off the light after the last detection of presence
+      default: 300
+      selector:
+        number:
+          min: 0
+          max: 3600
+          unit_of_measurement: seconds
+    off_transition_time:
+      name: Off Transition Time
+      description: Time in seconds for the light to fade out when turning off
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 60
+          unit_of_measurement: seconds
+    ambient_light_sensor:
+      name: Ambient Light Sensor
+      description: Sensor to measure ambient light level
+      default: ''
+      selector:
+        entity:
+          domain: sensor
+          device_class: illuminance
+    light_threshold:
+      name: Ambient Light Threshold
+      description: Upper threshold for ambient light level to allow the light to turn on
+      default: 20
+      selector:
+        number:
+          min: 0
+          max: 1000
+    quick_pass_time:
+      name: Quick Pass Time
+      description: Maximum duration in seconds to consider presence as a quick pass
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: seconds
+
+mode: restart
+max_exceeded: silent
+
+variables:
+  presence_sensor: !input presence_sensor
+  light_entity_id: !input light_entity
+  ambient_light_sensor: !input ambient_light_sensor
+  light_threshold: !input light_threshold
+  quick_pass_time: !input quick_pass_time
+  no_motion_wait: !input no_motion_wait
+  off_transition_time: !input off_transition_time
+  brightness_level: !input brightness_level
+
+trigger:
+  - platform: state
+    entity_id: !input presence_sensor
+    from: 'off'
+    to: 'on'
+
+condition:
+  - condition: template
+    value_template: >
+      {% if ambient_light_sensor != '' %}
+        {{ states(ambient_light_sensor) | float(0) < light_threshold | float(0) }}
+      {% else %}
+        true
+      {% endif %}
+
+action:
+  - alias: "Define necessary variables"
+    variables:
+      light_was_on: "{{ is_state(light_entity_id, 'on') | bool }}"
+      quick_pass_time_float: "{{ quick_pass_time | float(0) }}"
+      no_motion_wait_int: "{{ no_motion_wait | int(0) }}"
+      off_transition_time_float: "{{ off_transition_time | float(0) }}"
+      brightness_level_float: "{{ brightness_level | float(0) }}"
+      light_threshold_float: "{{ light_threshold | float(0) }}"
+
+  - alias: "Turn on the light"
+    service: light.turn_on
+    target:
+      entity_id: "{{ light_entity_id }}"
+    data:
+      brightness_pct: "{{ brightness_level_float }}"
+
+  - alias: "Record presence start time"
+    variables:
+      presence_start_time: "{{ now() }}"
+
+  - alias: "Wait for presence to end"
+    wait_for_trigger:
+      - platform: state
+        entity_id: !input presence_sensor
+        from: 'on'
+        to: 'off'
+
+  - alias: "Calculate presence duration"
+    variables:
+      presence_duration: "{{ (as_timestamp(now()) - as_timestamp(presence_start_time)) | float(0) }}"
+
+  - alias: "Determine if quick pass mode applies"
+    choose:
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ presence_duration < quick_pass_time_float and not light_was_on }}
+        sequence:
+          - alias: "Turn off the light after a quick pass"
+            service: light.turn_off
+            target:
+              entity_id: "{{ light_entity_id }}"
+            data:
+              transition: "{{ off_transition_time_float }}"
+    default:
+      - alias: "Wait before turning off the light"
+        delay:
+          seconds: "{{ no_motion_wait_int }}"
+      - alias: "Turn off the light"
+        service: light.turn_off
+        target:
+          entity_id: "{{ light_entity_id }}"
+        data:
+          transition: "{{ off_transition_time_float }}"

@@ -34,7 +34,6 @@ blueprint:
       selector:
         entity:
           domain: input_number
-          optional: true
     no_motion_wait:
       name: Wait Time After No Motion
       description: Time in seconds to wait before turning off the light after the last detection of presence

@@ -4,6 +4,7 @@ blueprint:
     Turns on a light when presence is detected. If the presence duration is less than a specified time (quick pass), the light turns off immediately after presence ends, unless the light was already on at the time of triggering. Brightness level can be set via a static input or dynamically via an input_number.
 
   domain: automation
+  source_url: https://github.com/dafal/homeassistant_blueprints/blob/main/presence_light.yaml
   input:
     presence_sensor:
       name: Presence Sensor
@@ -121,7 +122,7 @@ action:
         {% else %}
           {% set brightness = brightness_level | float(100) %}
         {% endif %}
-        {{ [brightness, 0, 100] | sort | join(',') | float }}
+        {{ [brightness, 0, 100] | min | max(0) }}
 
   - alias: "Turn on the light with dynamic or static brightness"
     service: light.turn_on

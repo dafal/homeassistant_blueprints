@@ -1,7 +1,7 @@
 blueprint:
-  name: Presence-Activated Light with Quick Pass Mode (Optional Dynamic Brightness)
+  name: Presence-Activated Light with Quick Pass Mode (Dynamic Brightness via Input Number)
   description: >
-    Turns on a light when presence is detected. If the presence duration is less than a specified time (quick pass), the light turns off immediately after presence ends, unless the light was already on at the time of triggering. Brightness level can be set via a static input or dynamically via an input_number.
+    Turns on a light when presence is detected. If the presence duration is less than a specified time (quick pass), the light turns off immediately after presence ends, unless the light was already on at the time of triggering. Brightness level is dynamically set via an input number entity.
 
   domain: automation
   input:
@@ -18,19 +18,9 @@ blueprint:
       selector:
         entity:
           domain: light
-    brightness_level:
-      name: Brightness Percentage (Static)
-      description: Brightness level for the light when it turns on (used if no input_number is provided)
-      default: 100
-      selector:
-        number:
-          min: 0
-          max: 100
-          unit_of_measurement: '%'
     brightness_input:
-      name: Brightness Input Number (Optional)
-      description: Input number entity to dynamically set brightness level (0-100). Leave empty to use static brightness level.
-      default: ''
+      name: Brightness Input Number
+      description: Input number entity to dynamically set brightness level (0-100)
       selector:
         entity:
           domain: input_number
@@ -85,7 +75,6 @@ variables:
   presence_sensor: !input presence_sensor
   light_entity_id: !input light_entity
   brightness_input: !input brightness_input
-  brightness_level: !input brightness_level
   ambient_light_sensor: !input ambient_light_sensor
   light_threshold: !input light_threshold
   quick_pass_time: !input quick_pass_time
@@ -116,14 +105,10 @@ action:
       off_transition_time_float: "{{ off_transition_time | float(0) }}"
       light_threshold_float: "{{ light_threshold | float(0) }}"
       dynamic_brightness: >
-        {% if brightness_input != '' %}
-          {% set brightness = states(brightness_input) | float(100) %}
-        {% else %}
-          {% set brightness = brightness_level | float(100) %}
-        {% endif %}
-        {{ brightness if brightness >= 0 and brightness <= 100 else (100 if brightness > 100 else 0) }}
+        {% set brightness = states(brightness_input) | float(100) %}
+        {{ [brightness, 0, 100] | sort | join(',') | float }}
 
-  - alias: "Turn on the light with dynamic or static brightness"
+  - alias: "Turn on the light with dynamic brightness"
     service: light.turn_on
     target:
       entity_id: "{{ light_entity_id }}"

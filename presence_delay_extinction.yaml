@@ -1,45 +1,170 @@
 blueprint:
-  name: Turn off lights after inactivity
-  description: Automatically turn off lights when no motion or occupancy is detected for a specified time.
+  name: Presence-Activated Light with Quick Pass Mode (Optional Dynamic Brightness)
+  description: >
+    Turns on a light when presence is detected. If the presence duration is less than a specified time (quick pass), the light turns off immediately after presence ends, unless the light was already on at the time of triggering. Brightness level can be set via a static input or dynamically via an input_number.
+
   domain: automation
-  author: eric.daras@me.com
   input:
-    occupancy_sensor:
-      name: Presence sensor
-      description: The motion or occupancy sensor to monitor.
+    presence_sensor:
+      name: Presence Sensor
+      description: Presence sensor to monitor
       selector:
         entity:
           domain: binary_sensor
-          device_class:
-            - motion
-            - occupancy
-    delay_time:
-      name: Delay before turning off
-      description: Time to wait after no presence is detected before turning off the lights.
-      default: 5
+          device_class: occupancy
+    light_entity:
+      name: Light
+      description: Light entity to control
+      selector:
+        entity:
+          domain: light
+    brightness_level:
+      name: Brightness Percentage (Static)
+      description: Brightness level for the light when it turns on (used if no input_number is provided)
+      default: 100
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: '%'
+    brightness_input:
+      name: Brightness Input Number (Optional)
+      description: Input number entity to dynamically set brightness level (0-100). Leave empty to use static brightness level.
+      default: ''
+      selector:
+        entity:
+          domain: input_number
+    no_motion_wait:
+      name: Wait Time After No Motion
+      description: Time in seconds to wait before turning off the light after the last detection of presence
+      default: 300
+      selector:
+        number:
+          min: 0
+          max: 3600
+          unit_of_measurement: seconds
+    off_transition_time:
+      name: Off Transition Time
+      description: Time in seconds for the light to fade out when turning off
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 60
+          unit_of_measurement: seconds
+    ambient_light_sensor:
+      name: Ambient Light Sensor
+      description: Sensor to measure ambient light level
+      default: ''
+      selector:
+        entity:
+          domain: sensor
+          device_class: illuminance
+    light_threshold:
+      name: Ambient Light Threshold
+      description: Upper threshold for ambient light level to allow the light to turn on
+      default: 20
+      selector:
+        number:
+          min: 0
+          max: 1000
+    quick_pass_time:
+      name: Quick Pass Time
+      description: Maximum duration in seconds to consider presence as a quick pass
+      default: 30
       selector:
         number:
           min: 1
           max: 60
-          unit_of_measurement: minutes
-          mode: slider
-    target_lights:
-      name: Target lights
-      description: The lights or groups of lights to turn off.
-      selector:
-        target:
-          entity:
-            domain: light
+          unit_of_measurement: seconds
 
 mode: restart
+max_exceeded: silent
+
+variables:
+  presence_sensor: !input presence_sensor
+  light_entity_id: !input light_entity
+  brightness_input: !input brightness_input
+  brightness_level: !input brightness_level
+  ambient_light_sensor: !input ambient_light_sensor
+  light_threshold: !input light_threshold
+  quick_pass_time: !input quick_pass_time
+  no_motion_wait: !input no_motion_wait
+  off_transition_time: !input off_transition_time
 
 trigger:
   - platform: state
-    entity_id: !input occupancy_sensor
-    to: 'off'
-    for:
-      minutes: !input delay_time
+    entity_id: !input presence_sensor
+    from: 'off'
+    to: 'on'
+
+condition:
+  - condition: template
+    value_template: >
+      {% if ambient_light_sensor != '' %}
+        {{ states(ambient_light_sensor) | float(0) < light_threshold | float(0) }}
+      {% else %}
+        true
+      {% endif %}
 
 action:
-  - service: light.turn_off
-    target: !input target_lights
+  - alias: "Define necessary variables"
+    variables:
+      light_was_on: "{{ is_state(light_entity_id, 'on') | bool }}"
+      quick_pass_time_float: "{{ quick_pass_time | float(0) }}"
+      no_motion_wait_int: "{{ no_motion_wait | int(0) }}"
+      off_transition_time_float: "{{ off_transition_time | float(0) }}"
+      light_threshold_float: "{{ light_threshold | float(0) }}"
+      dynamic_brightness: >
+        {% if brightness_input != '' %}
+          {% set brightness = states(brightness_input) | float(100) %}
+        {% else %}
+          {% set brightness = brightness_level | float(100) %}
+        {% endif %}
+        {{ [brightness, 0, 100] | sort | join(',') | float }}
+
+  - alias: "Turn on the light with dynamic or static brightness"
+    service: light.turn_on
+    target:
+      entity_id: "{{ light_entity_id }}"
+    data:
+      brightness_pct: "{{ dynamic_brightness }}"
+
+  - alias: "Record presence start time"
+    variables:
+      presence_start_time: "{{ now() }}"
+
+  - alias: "Wait for presence to end"
+    wait_for_trigger:
+      - platform: state
+        entity_id: !input presence_sensor
+        from: 'on'
+        to: 'off'
+
+  - alias: "Calculate presence duration"
+    variables:
+      presence_duration: "{{ (as_timestamp(now()) - as_timestamp(presence_start_time)) | float(0) }}"
+
+  - alias: "Determine if quick pass mode applies"
+    choose:
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ presence_duration < quick_pass_time_float and not light_was_on }}
+        sequence:
+          - alias: "Turn off the light after a quick pass"
+            service: light.turn_off
+            target:
+              entity_id: "{{ light_entity_id }}"
+            data:
+              transition: "{{ off_transition_time_float }}"
+    default:
+      - alias: "Wait before turning off the light"
+        delay:
+          seconds: "{{ no_motion_wait_int }}"
+      - alias: "Turn off the light"
+        service: light.turn_off
+        target:
+          entity_id: "{{ light_entity_id }}"
+        data:
+          transition: "{{ off_transition_time_float }}"

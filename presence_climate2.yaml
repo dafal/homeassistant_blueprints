@@ -1,0 +1,215 @@
+blueprint:
+  name: Comprehensive Presence-Based Climate Control
+  description: >
+    A unified blueprint for climate control based on presence, with door/window sensors to set the thermostat to 4°C,
+    a calendar override to enforce the presence temperature, and a binary sensor to enforce the absence temperature.
+
+    Priorities:
+      1. If a door or window is open, set thermostat to 4°C after 120 seconds.
+      2. If a calendar event is active, enforce the presence temperature.
+      3. If the forced absence binary sensor is active, enforce the absence temperature.
+      4. If presence is detected, apply the presence temperature after a delay.
+      5. If absence is detected, apply the absence temperature after a delay.
+
+  domain: automation
+  source_url: https://github.com/dafal/homeassistant_blueprints/blob/main/presence_climate2.yaml
+  input:
+    presence_sensor:
+      name: Presence Sensor
+      description: Binary sensor indicating room occupancy
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: occupancy
+
+    climate_entity:
+      name: Thermostat
+      description: Climate entity to control
+      selector:
+        entity:
+          domain: climate
+
+    door_window_sensor:
+      name: Door/Window Sensor
+      description: Binary sensor for a door or window
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: 
+            - opening
+            - window
+            - door
+
+    force_absence_sensor:
+      name: Forced Absence Sensor
+      description: Binary sensor to enforce the absence temperature
+      selector:
+        entity:
+          domain: binary_sensor
+
+    presence_temperature:
+      name: Presence Temperature
+      description: Temperature when the room is occupied
+      selector:
+        number:
+          min: 5
+          max: 35
+          step: 0.5
+          unit_of_measurement: °C
+      default: 21
+
+    absence_temperature:
+      name: Absence Temperature
+      description: Temperature when the room is unoccupied or absence is enforced
+      selector:
+        number:
+          min: 5
+          max: 35
+          step: 0.5
+          unit_of_measurement: °C
+      default: 17
+
+    calendar_entity:
+      name: Calendar Override (Optional)
+      description: Calendar entity to enforce the presence temperature
+      default: ""
+      selector:
+        entity:
+          domain: calendar
+
+    presence_activation_delay:
+      name: Presence Activation Delay
+      description: Time (in minutes) of continuous presence before applying the presence temperature
+      selector:
+        number:
+          min: 1
+          max: 120
+          unit_of_measurement: minutes
+      default: 10
+
+    absence_deactivation_delay:
+      name: Absence Deactivation Delay
+      description: Time (in minutes) of continuous absence before applying the absence temperature
+      selector:
+        number:
+          min: 1
+          max: 120
+          unit_of_measurement: minutes
+      default: 10
+
+mode: restart
+max_exceeded: silent
+
+variables:
+  presence_sensor: !input presence_sensor
+  climate_entity: !input climate_entity
+  door_window_sensor: !input door_window_sensor
+  force_absence_sensor: !input force_absence_sensor
+  presence_temperature: !input presence_temperature
+  absence_temperature: !input absence_temperature
+  calendar_entity: !input calendar_entity
+  presence_activation_delay: !input presence_activation_delay
+  absence_deactivation_delay: !input absence_deactivation_delay
+
+trigger:
+  - platform: state
+    entity_id: !input presence_sensor
+  - platform: state
+    entity_id: !input door_window_sensor
+  - platform: state
+    entity_id: !input force_absence_sensor
+  - platform: state
+    entity_id: !input calendar_entity
+    enabled: "{{ calendar_entity != '' }}"
+
+condition: []
+
+action:
+  - alias: "Evaluate conditions"
+    variables:
+      calendar_active: >
+        {% if calendar_entity != '' %}
+          {{ states(calendar_entity) in ['on', 'busy'] }}
+        {% else %}
+          false
+        {% endif %}
+      force_absence: "{{ is_state(force_absence_sensor, 'on') }}"
+      door_window_open: "{{ is_state(door_window_sensor, 'on') }}"
+
+  - alias: "Adjust climate control"
+    choose:
+      # 1) If a door or window is open, set thermostat to 4°C after 120 seconds
+      - conditions:
+          - condition: template
+            value_template: "{{ door_window_open }}"
+        sequence:
+          - delay:
+              seconds: 120
+          - condition: state
+            entity_id: !input door_window_sensor
+            state: 'on'  # Re-check to ensure it's still open
+          - service: climate.set_temperature
+            target:
+              entity_id: "{{ climate_entity }}"
+            data:
+              temperature: 4
+
+      # 2) If the calendar is active, set presence temperature immediately
+      - conditions:
+          - condition: template
+            value_template: "{{ not door_window_open and calendar_active }}"
+        sequence:
+          - service: climate.set_temperature
+            target:
+              entity_id: "{{ climate_entity }}"
+            data:
+              temperature: "{{ presence_temperature }}"
+
+      # 3) If forced absence sensor is active, set absence temperature
+      - conditions:
+          - condition: template
+            value_template: "{{ not door_window_open and force_absence }}"
+        sequence:
+          - service: climate.set_temperature
+            target:
+              entity_id: "{{ climate_entity }}"
+            data:
+              temperature: "{{ absence_temperature }}"
+
+      # 4) If presence is detected, apply presence temperature after delay
+      - conditions:
+          - condition: template
+            value_template: "{{ not door_window_open }}"
+          - condition: state
+            entity_id: !input presence_sensor
+            state: 'on'
+        sequence:
+          - delay:
+              minutes: "{{ presence_activation_delay }}"
+          - condition: state
+            entity_id: !input presence_sensor
+            state: 'on'  # Re-check to confirm presence
+          - service: climate.set_temperature
+            target:
+              entity_id: "{{ climate_entity }}"
+            data:
+              temperature: "{{ presence_temperature }}"
+
+      # 5) If absence is detected, apply absence temperature after delay
+      - conditions:
+          - condition: template
+            value_template: "{{ not door_window_open }}"
+          - condition: state
+            entity_id: !input presence_sensor
+            state: 'off'
+        sequence:
+          - delay:
+              minutes: "{{ absence_deactivation_delay }}"
+          - condition: state
+            entity_id: !input presence_sensor
+            state: 'off'  # Re-check to confirm absence
+          - service: climate.set_temperature
+            target:
+              entity_id: "{{ climate_entity }}"
+            data:
+              temperature: "{{ absence_temperature }}"

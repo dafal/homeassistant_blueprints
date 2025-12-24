@@ -62,7 +62,7 @@ condition:
     value_template: >
       {% set new = states(src) | float(none) %}
       {% set old = states(dst) | float(none) %}
-      {{ new is not none and old is not none and (new - old) | abs > (min_delta | float) }}
+      {{ new is not none and old is not none and (new - old) | abs >= (min_delta | float) }}
 
 action:
   - service: number.set_value

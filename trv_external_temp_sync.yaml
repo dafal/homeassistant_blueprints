@@ -1,8 +1,6 @@
 blueprint:
-  name: "TRV - Sync External Temperature"
-  description: >
-    Synchronize a temperature sensor to a TRV external temperature input
-    with optional rounding and anti-spam delta.
+  name: "TRV - Sync external temperature (simple)"
+  description: "Sync a temperature sensor value to a TRV external temperature number entity."
   domain: automation
 
   input:
@@ -19,35 +17,11 @@ blueprint:
         entity:
           domain: number
 
-    rounding:
-      name: Rounding decimals
-      description: 0 = integer, 1 = 0.1°C, 2 = 0.01°C
-      default: 1
-      selector:
-        number:
-          min: 0
-          max: 2
-          step: 1
-          mode: slider
-
-    min_delta:
-      name: Minimum change to send (anti-spam)
-      description: Only update the TRV if change is greater than this
-      default: 0.1
-      selector:
-        number:
-          min: 0
-          max: 1
-          step: 0.1
-          mode: slider
-
 mode: single
 
 variables:
   src: !input source_temperature
   dst: !input target_external_temp
-  rounding: !input rounding
-  min_delta: !input min_delta
 
 trigger:
   - platform: state
@@ -58,17 +32,9 @@ condition:
     value_template: >
       {{ states(src) not in ['unknown', 'unavailable', 'none'] }}
 
-  - condition: template
-    value_template: >
-      {% set new = states(src) | float(none) %}
-      {% set old = states(dst) | float(none) %}
-      {{ new is not none and old is not none and (new - old) | abs >= (min_delta | float) }}
-
 action:
   - service: number.set_value
     target:
       entity_id: !input target_external_temp
     data:
-      value: >
-        {% set t = states(src) | float %}
-        {{ t | round(rounding | int) }}
+      value: "{{ states(src) | float }}"

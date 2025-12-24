@@ -1,0 +1,72 @@
+blueprint:
+  name: "TRV - Sync External Temperature"
+  description: >
+    Synchronize a temperature sensor to a TRV external temperature input
+    with optional rounding and anti-spam delta.
+  domain: automation
+
+  input:
+    source_temperature:
+      name: Source temperature sensor
+      description: Temperature sensor providing the external value
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+
+    target_external_temp:
+      name: TRV external temperature
+      description: TRV number entity for external temperature input
+      selector:
+        entity:
+          domain: number
+
+    rounding:
+      name: Rounding (optional)
+      description: Number of decimal places (0 = integer, 1 = 0.1°C, 2 = 0.01°C)
+      default: 1
+      selector:
+        number:
+          min: 0
+          max: 2
+          step: 1
+          mode: slider
+
+    min_delta:
+      name: Minimum change (anti-spam)
+      description: Minimum temperature difference required to send an update
+      default: 0.1
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.1
+          mode: slider
+
+trigger:
+  - platform: state
+    entity_id: !input source_temperature
+
+condition:
+  - condition: template
+    value_template: >
+      {{ states(trigger.entity_id) not in ['unknown', 'unavailable'] }}
+
+  - condition: template
+    value_template: >
+      {{
+        (
+          states(trigger.entity_id) | float -
+          states(!input target_external_temp) | float
+        ) | abs > (!input min_delta)
+      }}
+
+action:
+  - service: number.set_value
+    target:
+      entity_id: !input target_external_temp
+    data:
+      value: >
+        {{ states(trigger.entity_id) | float | round(!input rounding) }}
+
+mode: single

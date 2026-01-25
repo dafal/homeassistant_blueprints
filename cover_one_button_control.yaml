@@ -48,6 +48,14 @@ blueprint:
           unit_of_measurement: "%"
           mode: slider
 
+    use_entity_actions:
+      name: Use only cover.* services
+      description: >
+        Leave on true (recommended): more reliable and compatible everywhere.
+      default: true
+      selector:
+        boolean: {}
+
 mode: restart
 max_exceeded: silent
 
@@ -61,6 +69,7 @@ variables:
   cover: !input cover_entity
   allowed: !input trigger_event_types
   target_pos: !input target_position
+  use_entity: !input use_entity_actions
   etype: "{{ trigger.event.data.new_state.attributes.event_type | default('') }}"
   cstate: "{{ states(cover) }}"
 

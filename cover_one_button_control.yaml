@@ -52,15 +52,16 @@ mode: restart
 max_exceeded: silent
 
 trigger:
-  - platform: state
-    entity_id: !input button_event_entity
-    attribute: event_type
+  - platform: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input button_event_entity
 
 variables:
   cover: !input cover_entity
   allowed: !input trigger_event_types
   target_pos: !input target_position
-  etype: "{{ trigger.to_state.attributes.event_type | default('') }}"
+  etype: "{{ trigger.event.data.new_state.attributes.event_type | default('') }}"
   cstate: "{{ states(cover) }}"
 
 condition:

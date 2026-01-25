@@ -111,8 +111,8 @@ action:
                 target:
                   entity_id: "{{ cover }}"
 
-    # Other states (partial/unknown/unavailable) -> try to toggle
+    # Other states (partial/unknown/unavailable) -> open the cover
     default:
-      - service: cover.toggle
+      - service: cover.open_cover
         target:
           entity_id: "{{ cover }}"

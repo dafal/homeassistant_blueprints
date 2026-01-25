@@ -1,0 +1,108 @@
+blueprint:
+  name: One-Button Cover Control (Event Entity)
+  description: >
+    Control a cover with a single button using an event.* entity (event_type).
+    One press: open/close/stop depending on cover state. Avoids device triggers.
+    Supports partial opening positions for blinds and shades.
+  domain: automation
+  author: eric.daras@me.com
+  source_url: https://github.com/dafal/homeassistant_blueprints/blob/main/cover_one_button_control.yaml
+
+  input:
+    cover_entity:
+      name: Cover
+      description: The cover entity to control
+      selector:
+        entity:
+          domain: cover
+
+    button_event_entity:
+      name: Button (event.* entity)
+      description: Event entity that represents the button
+      selector:
+        entity:
+          domain: event
+
+    trigger_event_types:
+      name: Triggering event_type(s)
+      description: >
+        List of event types that should trigger the automation.
+        Examples: ['press'], ['single'], ['button_1'], etc.
+        Leave default for standard button press.
+      default:
+        - press
+      selector:
+        object: {}
+
+    target_position:
+      name: Target Open Position
+      description: >
+        Position percentage (0-100%) to set when opening the cover.
+        100 = fully open, 50 = half open (useful for privacy/ventilation).
+        Note: Cover must support set_cover_position service.
+      default: 100
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+          mode: slider
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input button_event_entity
+    attribute: event_type
+
+variables:
+  cover: !input cover_entity
+  allowed: !input trigger_event_types
+  target_pos: !input target_position
+  etype: "{{ trigger.to_state.attributes.event_type | default('') }}"
+  cstate: "{{ states(cover) }}"
+
+condition:
+  - condition: template
+    value_template: "{{ etype in allowed }}"
+
+action:
+  - choose:
+      # Stop if currently moving
+      - conditions: "{{ cstate in ['opening', 'closing'] }}"
+        sequence:
+          - service: cover.stop_cover
+            target:
+              entity_id: "{{ cover }}"
+
+      # If open -> close it
+      - conditions: "{{ cstate == 'open' }}"
+        sequence:
+          - service: cover.close_cover
+            target:
+              entity_id: "{{ cover }}"
+
+      # If closed -> open to target position
+      - conditions: "{{ cstate == 'closed' }}"
+        sequence:
+          - choose:
+              # Use set_cover_position if target is not 100%
+              - conditions: "{{ target_pos < 100 }}"
+                sequence:
+                  - service: cover.set_cover_position
+                    target:
+                      entity_id: "{{ cover }}"
+                    data:
+                      position: "{{ target_pos }}"
+            # Otherwise use open_cover for full open
+            default:
+              - service: cover.open_cover
+                target:
+                  entity_id: "{{ cover }}"
+
+    # Other states (partial/unknown/unavailable) -> try to toggle
+    default:
+      - service: cover.toggle
+        target:
+          entity_id: "{{ cover }}"

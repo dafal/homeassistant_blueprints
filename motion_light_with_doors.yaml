@@ -3,7 +3,7 @@ blueprint:
   description: Turn on a light when motion is detected or a door is opened; turn off after motion stops and the wait time elapses.
   domain: automation
   author: Home Assistant (extended)
-  source_url: https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/motion_light.yaml
+  source_url: https://github.com/dafal/homeassistant_blueprints/blob/main/motion_light_with_doors.yaml
   input:
     motion_entity:
       name: Motion Sensor

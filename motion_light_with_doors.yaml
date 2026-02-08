@@ -41,20 +41,34 @@ blueprint:
 mode: restart
 max_exceeded: silent
 
+trigger_variables:
+  door_entities: !input door_entities
+
 variables:
   motion_entity: !input motion_entity
-  door_entities: !input door_entities
 
 trigger:
   - platform: state
     entity_id: !input motion_entity
     from: "off"
     to: "on"
+    id: motion
   - platform: state
     entity_id: !input door_entities
     from: "off"
     to: "on"
-    enabled: "{{ door_entities | length > 0 }}"
+    id: door
+
+condition:
+  - condition: or
+    conditions:
+      - condition: trigger
+        id: motion
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: door
+          - "{{ door_entities | length > 0 }}"
 
 action:
   - alias: "Turn on the light"
